@@ -42,6 +42,6 @@ export const footerData: {
         discord: 'https://discord.gg/V9SHCKuXhX',
         instagram: 'https://instagram.com/acmutd',
         github: 'https://github.com/acmutd',
-        linkedin: 'https://www.linkedin.com/company/acm-utd/',
+        linkedin: 'https://www.linkedin.com/company/acmutd/',
     },
 };
