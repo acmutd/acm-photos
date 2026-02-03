@@ -1,8 +1,81 @@
-import {Link} from 'react-router-dom';
+import {Link, useSearchParams} from 'react-router-dom';
+import * as React from "react";
+
+function prettyReason(reason: string | null) {
+    switch (reason) {
+        case 'state':
+            return 'Security check failed (state mismatch). Try again.';
+        case 'no_refresh_token':
+            return 'Google didn’t give us a refresh token. Remove app access in your Google Account and sign in again.';
+        case 'wrong_domain':
+            return 'Please use your @acmutd.co account.';
+        case 'no_email':
+            return 'Google didn’t provide an email address.';
+        case 'no_id_token':
+            return 'Missing ID token from Google.';
+        case 'exception':
+            return 'Something went wrong on our side. Try again.';
+        default:
+            return 'Sign-in failed. Try again.';
+    }
+}
 
 export function HomePage() {
+    const [sp, setSp] = useSearchParams();
+    const auth = sp.get('auth'); // "ok" | "error" | null
+    const reason = sp.get('reason');
+
+    React.useEffect(() => {
+        if (!auth) return;
+
+        const t = setTimeout(() => {
+            const next = new URLSearchParams(sp);
+            next.delete('auth');
+            next.delete('reason');
+            setSp(next, {replace: true});
+        }, auth === 'ok' ? 2500 : 6000);
+
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [auth]);
+
     return (
         <div className="mx-auto w-full max-w-6xl px-6 py-8 sm:py-10 lg:py-12">
+            {auth && (
+                <div className="mb-6 rounded-xl border border-border bg-card p-4 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            {auth === 'ok' ? (
+                                <>
+                                    <div className="font-medium">Signed in.</div>
+                                    <div className="text-muted-foreground">You’re good to go.</div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="font-medium">Sign-in didn’t work.</div>
+                                    <div className="text-muted-foreground">{prettyReason(reason)}</div>
+                                </>
+                            )}
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const next = new URLSearchParams(sp);
+                                next.delete('auth');
+                                next.delete('reason');
+                                setSp(next, {replace: true});
+                            }}
+                            className="rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition"
+                            aria-label="Dismiss"
+                            title="Dismiss"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Hero */}
             <div className="grid items-center gap-8 lg:grid-cols-[1fr_340px]">
                 <div className="flex flex-col gap-3">
@@ -46,7 +119,7 @@ export function HomePage() {
                             <img
                                 src="/assets/acmp-peechi-transparent.webp"
                                 alt="ACM Photos mascot"
-                                className="w-full max-w-[240px] select-none object-contain ml-2 motion-safe:animate-peechiSway origin-center"
+                                className="ml-2 w-full max-w-[240px] select-none object-contain motion-safe:animate-peechiSway origin-center"
                                 draggable={false}
                             />
                         </div>

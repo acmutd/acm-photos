@@ -40,7 +40,9 @@ export function Navbar({email}: NavbarProps) {
                 </Link>
 
                 <nav className="ml-3 hidden items-center gap-1 sm:flex">
-                    <NavLink to="/media" className={navClass}>Browse</NavLink>
+                    <NavLink to="/media" className={navClass}>
+                        Browse
+                    </NavLink>
                     <NavLink to="/upload" className={navClass}>Upload</NavLink>
                     <NavLink to="/requests" className={navClass}>Requests</NavLink>
                 </nav>

@@ -1,6 +1,7 @@
 import type {VercelRequest, VercelResponse} from '@vercel/node';
+import {clearSessionCookie} from '../_lib/session.js';
 
 export default function handler(_req: VercelRequest, res: VercelResponse) {
-    res.setHeader('Set-Cookie', 'acm_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+    clearSessionCookie(res);
     return res.status(200).json({ok: true});
 }
