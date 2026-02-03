@@ -26,9 +26,8 @@ export const footerData: {
         {
             title: 'Guidelines',
             links: [
-                {label: 'Tagging rules', href: '/guidelines/tagging'},
-                {label: 'Privacy', href: '/guidelines/privacy'},
-                {label: 'Copyright', href: '/guidelines/copyright'},
+                {label: 'Tagging rules', href: '/tagging'},
+                {label: 'Privacy', href: '/privacy'},
             ],
         },
         {

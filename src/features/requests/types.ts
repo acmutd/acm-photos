@@ -21,6 +21,7 @@ export type RequestTicket = {
     title: string;
     description: string;
 
+    dateNeededBy?: string;
     attachmentLinks: string[];
     status: RequestStatus;
 

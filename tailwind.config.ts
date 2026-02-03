@@ -19,6 +19,16 @@ export default {
     ],
     theme: {
         extend: {
+            keyframes: {
+                peechiSway: {
+                    '0%, 100%': {transform: 'rotate(-1.2deg) translateY(0px)'},
+                    '50%': {transform: 'rotate(1.2deg)'},
+                },
+            },
+            animation: {
+                peechiSway: 'peechiSway 3.2s ease-in-out infinite',
+            },
+
             fontFamily: {
                 sans: ['Gilroy', 'sans-serif'],
             },

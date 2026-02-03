@@ -5,6 +5,7 @@ export type CreateRequestInput = {
     division: Division;
     title: string;
     description: string;
+    dateNeededBy?: string;
     attachmentLinks: string[];
 };
 
@@ -13,12 +14,8 @@ export type ListRequestsParams = {
     division?: Division | 'all';
 };
 
-export async function listRequests(params: ListRequestsParams = {}) {
-    const sp = new URLSearchParams();
-    if (params.status && params.status !== 'all') sp.set('status', params.status);
-    if (params.division && params.division !== 'all') sp.set('division', params.division);
-    const qs = sp.toString();
-    return api<{ items: RequestTicket[] }>(`/api/requests${qs ? `?${qs}` : ''}`);
+export async function listRequests() {
+  return api<{ items: RequestTicket[] }>('/api/requests');
 }
 
 export async function createRequest(input: CreateRequestInput) {
@@ -29,7 +26,10 @@ export async function createRequest(input: CreateRequestInput) {
 }
 
 export async function getRequest(id: string) {
-    return api<{ item: RequestTicket }>(`/api/requests/${id}`);
+  const { items } = await listRequests();
+  const item = items.find((x) => x.id === id);
+  if (!item) throw new Error('Not found');
+  return { item };
 }
 
 export async function updateRequest(id: string, patch: Partial<RequestTicket>) {

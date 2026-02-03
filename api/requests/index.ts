@@ -13,6 +13,8 @@ type RequestTicket = {
     division: Division;
     title: string;
     description: string;
+    dateNeededBy?: string;
+
     attachmentLinks: string[];
     status: RequestStatus;
     deliverableFolderId?: string;
@@ -64,6 +66,11 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(400).json({error: 'Missing fields'});
         }
 
+        const dateNeededBy =
+            typeof body.dateNeededBy === 'string' && body.dateNeededBy.trim()
+                ? body.dateNeededBy.trim()
+                : undefined;
+
         const now = new Date().toISOString();
         const ticket: RequestTicket = {
             id: crypto.randomUUID(),
@@ -72,6 +79,8 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
             division: body.division as Division,
             title: String(body.title),
             description: String(body.description),
+            dateNeededBy,
+
             attachmentLinks: Array.isArray(body.attachmentLinks) ? body.attachmentLinks.map(String) : [],
             status: 'open',
         };

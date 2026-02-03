@@ -11,6 +11,7 @@ export function RequestNewPage() {
     const [division, setDivision] = React.useState<Division>('Development');
     const [title, setTitle] = React.useState('');
     const [description, setDescription] = React.useState('');
+    const [dateNeededBy, setDateNeededBy] = React.useState('');
 
     const [attachmentLinks, setAttachmentLinks] = React.useState<string[]>(['']);
     const [pickedFiles, setPickedFiles] = React.useState<File[]>([]); // mock only
@@ -35,6 +36,7 @@ export function RequestNewPage() {
             division,
             title: title.trim(),
             description: description.trim(),
+            dateNeededBy: dateNeededBy.trim() || undefined,
             attachmentLinks: cleaned,
         });
 
@@ -83,6 +85,16 @@ export function RequestNewPage() {
                         placeholder="What is it for, due date, size/platform, copy text, references, etc."
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
+                    />
+                </div>
+
+                <div className="rounded-xl border border-border bg-card p-4">
+                    <label className="text-xs text-muted-foreground">Date needed by (optional)</label>
+                    <input
+                        type="date"
+                        className="mt-2 h-11 w-full rounded-md border border-input bg-background px-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        value={dateNeededBy}
+                        onChange={(e) => setDateNeededBy(e.target.value)}
                     />
                 </div>
 
