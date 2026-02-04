@@ -98,7 +98,7 @@ export default function Footer() {
                 <div
                     className="mt-10 flex flex-col gap-2 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
                     <span>© {new Date().getFullYear()} ACM UTD</span>
-                    <span className="text-muted-foreground/80">Built by ACM Development</span>
+                    <span className="text-muted-foreground/80">made with <span className="text-pink-500 inline-block animate-pulse">♥</span> by acm dev</span>
                 </div>
             </div>
         </footer>

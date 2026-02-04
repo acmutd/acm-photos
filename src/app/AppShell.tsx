@@ -14,7 +14,7 @@ function AppShellInner() {
     const isPublicRoute =
         location.pathname === '/privacy' ||
         location.pathname.startsWith('/privacy/') ||
-        location.pathname === '/sign-in';
+        location.pathname === '/';
 
     return (
         <div className="min-h-dvh bg-background">

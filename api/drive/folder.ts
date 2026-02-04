@@ -39,7 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         pageSize: 200,
 
         corpora: 'drive',
-        driveId,
+        driveId: process.env.SHARED_DRIVE_ID,
         includeItemsFromAllDrives: true,
         supportsAllDrives: true,
     });
