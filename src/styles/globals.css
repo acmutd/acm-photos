@@ -17,6 +17,14 @@ body {
   overflow-x: hidden;
 }
 
+html {
+  scrollbar-width: none;
+}
+
+::-webkit-scrollbar {
+  display: none;
+}
+
 .background-container {
   position: relative;
   overflow: hidden;
