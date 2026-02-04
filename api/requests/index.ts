@@ -1,93 +1,151 @@
-import type {VercelRequest, VercelResponse} from '@vercel/node';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error
+import admin from "firebase-admin";
+import { getSession } from "../_lib/session.js";
 
 type Division =
-    | 'Development' | 'Projects' | 'Research' | 'Education'
-    | 'Media' | 'HackUTD' | 'Industry' | 'Community' | 'Exec' | 'Finance';
+  | "Development"
+  | "Projects"
+  | "Research"
+  | "Education"
+  | "Media"
+  | "HackUTD"
+  | "Industry"
+  | "Community"
+  | "Exec"
+  | "Finance";
 
-type RequestStatus = 'open' | 'in_progress' | 'done';
+type RequestStatus = "open" | "in_progress" | "done";
 
-type RequestTicket = {
-    id: string;
-    createdAt: string;
-    createdByEmail: string;
-    division: Division;
-    title: string;
-    description: string;
-    dateNeededBy?: string;
+const VALID_DIVISIONS = new Set([
+  "Development",
+  "Projects",
+  "Research",
+  "Education",
+  "Media",
+  "HackUTD",
+  "Industry",
+  "Community",
+  "Exec",
+  "Finance",
+]);
 
-    attachmentLinks: string[];
-    status: RequestStatus;
-    deliverableFolderId?: string;
-    notes?: string;
-};
+let dbInstance: admin.firestore.Firestore | null = null;
 
-const g = globalThis as any;
-g.__acm_requests = g.__acm_requests ?? ([] as RequestTicket[]);
-const store: RequestTicket[] = g.__acm_requests;
+function getDb() {
+  if (dbInstance) return dbInstance;
+  if (admin.apps.length > 0) {
+    dbInstance = admin.firestore();
+    return dbInstance;
+  }
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!raw) throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON");
 
-function readCookie(req: VercelRequest, name: string) {
-    const raw = req.headers.cookie ?? '';
-    const part = raw.split(';').map(s => s.trim()).find(s => s.startsWith(name + '='));
-    return part ? part.slice(name.length + 1) : null;
+  const sa = JSON.parse(raw);
+  if (typeof sa.private_key === "string") {
+    sa.private_key = sa.private_key.replace(/\\n/g, "\n");
+  }
+
+  admin.initializeApp({ credential: admin.credential.cert(sa) });
+  dbInstance = admin.firestore();
+  return dbInstance;
 }
 
-function getEmailFromSession(req: VercelRequest): string | null {
-    const token = readCookie(req, 'acm_session');
-    if (!token) return null;
-    try {
-        const json = Buffer.from(token, 'base64url').toString('utf8');
-        const session = JSON.parse(json) as { email: string };
-        return session.email ?? null;
-    } catch {
-        return null;
-    }
-}
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try {
+    const session = await getSession(req);
+    if (!session) return res.status(401).json({ error: "Not signed in" });
 
-export default function handler(req: VercelRequest, res: VercelResponse) {
-    const email = getEmailFromSession(req);
-    if (!email) return res.status(401).json({error: 'Not signed in'});
+    const db = getDb();
+    const col = db.collection("requests");
 
-    if (req.method === 'GET') {
-        const status = (req.query.status as string | undefined) ?? 'all';
-        const division = (req.query.division as string | undefined) ?? 'all';
+    if (req.method === "GET") {
+      const snapshot = await col.orderBy("createdAt", "desc").get();
 
-        const items = store
-            .filter(t => (status === 'all' ? true : t.status === status))
-            .filter(t => (division === 'all' ? true : t.division === division))
-            .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      const statusFilter = (req.query.status as string) || "all";
+      const divisionFilter = (req.query.division as string) || "all";
 
-        return res.status(200).json({items});
-    }
+      const items = snapshot.docs
+        .map((doc) => {
+          const d = doc.data();
+          return {
+            id: doc.id,
+            title: d.title ?? "(untitled)",
+            description: d.description ?? "",
+            division: d.division ?? "Community",
+            status: d.status ?? "open",
+            createdAt: d.createdAt ?? new Date().toISOString(),
+            createdByEmail: d.createdByEmail ?? "",
+            dateNeededBy: d.dateNeededBy ?? undefined,
+            attachmentLinks: d.attachmentLinks ?? [],
+            deliverableFolderId: d.deliverableFolderId ?? undefined,
+            notes: d.notes ?? undefined,
+          };
+        })
+        .filter((item) => {
+          if (statusFilter !== "all" && item.status !== statusFilter)
+            return false;
+          if (divisionFilter !== "all" && item.division !== divisionFilter)
+            return false;
+          return true;
+        });
 
-    if (req.method === 'POST') {
-        const body = (req.body ?? {}) as Partial<RequestTicket>;
-
-        if (!body.division || !body.title || !body.description) {
-            return res.status(400).json({error: 'Missing fields'});
-        }
-
-        const dateNeededBy =
-            typeof body.dateNeededBy === 'string' && body.dateNeededBy.trim()
-                ? body.dateNeededBy.trim()
-                : undefined;
-
-        const now = new Date().toISOString();
-        const ticket: RequestTicket = {
-            id: crypto.randomUUID(),
-            createdAt: now,
-            createdByEmail: email,
-            division: body.division as Division,
-            title: String(body.title),
-            description: String(body.description),
-            dateNeededBy,
-
-            attachmentLinks: Array.isArray(body.attachmentLinks) ? body.attachmentLinks.map(String) : [],
-            status: 'open',
-        };
-
-        store.push(ticket);
-        return res.status(201).json({item: ticket});
+      return res.status(200).json({ items });
     }
 
-    return res.status(405).json({error: 'Method not allowed'});
+    if (req.method === "POST") {
+      const body = req.body || {};
+
+      // Validation
+      if (!body.title || !body.description || !body.division) {
+        return res
+          .status(400)
+          .json({ error: "Missing title, description, or division" });
+      }
+
+      if (!VALID_DIVISIONS.has(body.division)) {
+        return res.status(400).json({ error: "Invalid division" });
+      }
+
+      const now = new Date().toISOString();
+
+      const newDoc = {
+        createdAt: now,
+        createdByEmail: session.email ?? "unknown",
+
+        title: String(body.title).trim(),
+        description: String(body.description).trim(),
+        division: body.division as Division,
+        status: "open",
+
+        dateNeededBy: body.dateNeededBy
+          ? String(body.dateNeededBy).trim()
+          : null,
+        attachmentLinks: Array.isArray(body.attachmentLinks)
+          ? body.attachmentLinks.map(String)
+          : [],
+
+        deliverableFolderId: null,
+        notes: null,
+      };
+
+      const ref = await col.add(newDoc);
+
+      return res.status(201).json({
+        item: {
+          id: ref.id,
+          ...newDoc,
+        },
+      });
+    }
+
+    return res.status(405).json({ error: "Method not allowed" });
+  } catch (e: any) {
+    console.error(e);
+    const msg =
+      typeof e?.message === "string" ? e.message : "Internal Server Error";
+    return res.status(500).json({ error: msg });
+  }
 }
