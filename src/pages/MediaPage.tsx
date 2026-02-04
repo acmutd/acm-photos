@@ -1,15 +1,25 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import * as React from 'react';
 import {Link, useSearchParams} from 'react-router-dom';
 
 import {FolderTree} from '@/components/FolderTree';
-import {useMediaSearch, type MediaSearchQuery} from '@/features/media/useMediaSearch';
+import {useMediaSearch} from '@/features/media/useMediaSearch';
+import type {MediaSearchQuery} from '@/features/drive/types';
 import {useDriveTree} from '@/features/drive/useDriveTree';
 import {buildCrumbs} from '@/features/drive/buildCrumbs';
 
 const SUGGESTED_TAGS = ['hackutd', 'acm', 'event', 'branding', 'flyer', '2026'];
 
 export function MediaPage() {
-    const [searchParams, setSearchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams({sub: '1'});
+
+    const includeSubfolders = searchParams.get('sub') !== '0';
+
+    function setIncludeSubfolders(nextOn: boolean) {
+        const next = new URLSearchParams(searchParams);
+        next.set('sub', nextOn ? '1' : '0');
+        setSearchParams(next);
+    }
 
     const tree = useDriveTree();
     const rootId = tree.data?.rootId ?? null;
@@ -33,10 +43,13 @@ export function MediaPage() {
 
     React.useEffect(() => {
         if (!effectiveFolderId) return;
-        setQ((p) => ({...p, folderId: effectiveFolderId}));
+        setQ((p: any) => ({...p, folderId: effectiveFolderId}));
     }, [effectiveFolderId]);
 
-    const {items, isLoading} = useMediaSearch(q);
+    const {items, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage} = useMediaSearch(q, {
+        mode: includeSubfolders ? 'recursive' : 'direct',
+        pageSize: 60,
+    });
 
     const crumbs = React.useMemo(() => {
         if (!rootId || !effectiveFolderId) return [{id: 'loading', name: 'Loading…'}];
@@ -82,7 +95,6 @@ export function MediaPage() {
     return (
         <div className="mx-auto w-full max-w-6xl px-6 py-10">
             <div className="grid gap-6 md:grid-cols-[260px_1fr]">
-                {/* Sidebar */}
                 <aside className="rounded-xl border border-border bg-card p-4">
                     <div className="mb-3 flex items-center justify-between">
                         <h2 className="text-sm font-semibold">Drive</h2>
@@ -107,9 +119,7 @@ export function MediaPage() {
                     </div>
                 </aside>
 
-                {/* Main */}
                 <section className="flex flex-col gap-4">
-                    {/* Breadcrumbs */}
                     <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                         {crumbs.map((c, idx) => (
                             <React.Fragment key={c.id}>
@@ -127,21 +137,34 @@ export function MediaPage() {
                         </div>
                     </div>
 
-                    {/* Search + filters (unchanged) */}
                     <div className="rounded-xl border border-border bg-card p-4">
                         <div className="flex flex-col gap-3">
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
                                     <h1 className="text-2xl font-semibold text-foreground">Browse media</h1>
-                                    <p className="mt-1 text-sm text-muted-foreground">Scoped to folder + tags (API
-                                        hookup next).</p>
+                                    <p className="mt-1 text-sm text-muted-foreground">
+                                        Scoped to folder + tags (API hookup next).
+                                    </p>
                                 </div>
 
                                 <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIncludeSubfolders(!includeSubfolders)}
+                                        className={[
+                                            'h-10 rounded-md border px-3 text-sm transition',
+                                            includeSubfolders
+                                                ? 'bg-media-gradient text-primary-foreground font-semibold'
+                                                : 'border-input bg-background text-muted-foreground hover:text-foreground',
+                                        ].join(' ')}
+                                    >
+                                        Include subfolders
+                                    </button>
+
                                     <select
                                         className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                                         value={q.type}
-                                        onChange={(e) => setQ((p) => ({...p, type: e.target.value as any}))}
+                                        onChange={(e) => setQ((p: any) => ({...p, type: e.target.value as any}))}
                                     >
                                         <option value="all">All types</option>
                                         <option value="photo">Photos</option>
@@ -153,7 +176,7 @@ export function MediaPage() {
                                     <select
                                         className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                                         value={q.sort}
-                                        onChange={(e) => setQ((p) => ({...p, sort: e.target.value as any}))}
+                                        onChange={(e) => setQ((p: any) => ({...p, sort: e.target.value as any}))}
                                     >
                                         <option value="new">Newest</option>
                                         <option value="old">Oldest</option>
@@ -165,7 +188,7 @@ export function MediaPage() {
                                 className="h-11 rounded-md border border-input bg-background px-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 placeholder="Search (event name, tag, year, etc.)"
                                 value={q.text}
-                                onChange={(e) => setQ((p) => ({...p, text: e.target.value}))}
+                                onChange={(e) => setQ((p: any) => ({...p, text: e.target.value}))}
                             />
 
                             <div className="flex flex-wrap gap-2">
@@ -189,7 +212,7 @@ export function MediaPage() {
 
                                 {q.tags.length > 0 && (
                                     <button
-                                        onClick={() => setQ((p) => ({...p, tags: []}))}
+                                        onClick={() => setQ((p: any) => ({...p, tags: []}))}
                                         className="ml-auto text-xs text-muted-foreground hover:text-foreground transition"
                                     >
                                         Clear tags
@@ -199,13 +222,13 @@ export function MediaPage() {
                         </div>
                     </div>
 
-                    {/* Grid (unchanged) */}
                     <div>
                         {isLoading ? (
                             <div className="text-sm text-muted-foreground">Loading…</div>
                         ) : items.length === 0 ? (
-                            <div className="text-sm text-muted-foreground">No results. Try another folder or remove
-                                filters.</div>
+                            <div className="text-sm text-muted-foreground">
+                                No results. Try another folder or remove filters.
+                            </div>
                         ) : (
                             <div className="grid grid-cols-[repeat(auto-fit,_minmax(200px,_1fr))] gap-4">
                                 {items.map((m) => (
@@ -232,7 +255,9 @@ export function MediaPage() {
                                                 {m.tags.slice(0, 3).map((t) => (
                                                     <span
                                                         key={t}
-                                                        className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-muted-foreground">{t}
+                                                        className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-muted-foreground"
+                                                    >
+                                                        {t}
                                                     </span>
                                                 ))}
                                             </div>
@@ -240,6 +265,17 @@ export function MediaPage() {
                                     </button>
                                 ))}
                             </div>
+                        )}
+
+                        {hasNextPage && (
+                            <button
+                                type="button"
+                                onClick={() => fetchNextPage()}
+                                disabled={isFetchingNextPage}
+                                className="mt-4 h-10 rounded-md border border-input bg-background px-3 text-sm text-muted-foreground hover:text-foreground transition disabled:opacity-60"
+                            >
+                                {isFetchingNextPage ? 'Loading…' : 'Load more'}
+                            </button>
                         )}
                     </div>
                 </section>
