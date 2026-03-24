@@ -2,5 +2,4 @@
 
 ![img.png](readme-img.png)
 
-photo site for acm. very much a wip. literally 0 functionality rn. building this solo so i'm gonna write commit messages that make you think i'm going insane. maybe i'll polish this if it goes somewhere. we'll see i spose.
--- ryan
+photo site for acm. very much a wip. some functionality rn, not the best. hi core team. sorry to push off this onto you guys, ik jeydin saw this coming from a mile away.
