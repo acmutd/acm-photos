@@ -32,6 +32,23 @@ function baseCookieAttrs(maxAgeSeconds: number) {
     .join("; ");
 }
 
+/**
+ * Append a Set-Cookie header without overwriting previous cookies on the
+ * same response.  `res.setHeader("Set-Cookie", val)` replaces all prior
+ * Set-Cookie headers, so we read whatever is already queued and send them
+ * all as an array.
+ */
+function appendCookie(res: VercelResponse, cookie: string) {
+  const existing = res.getHeader("Set-Cookie");
+  if (!existing) {
+    res.setHeader("Set-Cookie", cookie);
+  } else if (Array.isArray(existing)) {
+    res.setHeader("Set-Cookie", [...existing, cookie]);
+  } else {
+    res.setHeader("Set-Cookie", [String(existing), cookie]);
+  }
+}
+
 function parseCookie(req: VercelRequest, name: string) {
   const raw = req.headers.cookie ?? "";
   const part = raw
@@ -48,8 +65,8 @@ function keyFromSecret() {
 }
 
 export async function setOAuthStateCookie(res: VercelResponse, state: string) {
-  res.setHeader(
-    "Set-Cookie",
+  appendCookie(
+    res,
     `${OAUTH_STATE_COOKIE}=${encodeURIComponent(state)}; ${baseCookieAttrs(600)}`,
   );
 }
@@ -59,7 +76,7 @@ export function readOAuthStateCookie(req: VercelRequest) {
 }
 
 export function clearOAuthStateCookie(res: VercelResponse) {
-  res.setHeader("Set-Cookie", `${OAUTH_STATE_COOKIE}=; ${baseCookieAttrs(0)}`);
+  appendCookie(res, `${OAUTH_STATE_COOKIE}=; ${baseCookieAttrs(0)}`);
 }
 
 export async function setSessionCookie(
@@ -74,8 +91,8 @@ export async function setSessionCookie(
     .setExpirationTime("7d")
     .encrypt(key);
 
-  res.setHeader(
-    "Set-Cookie",
+  appendCookie(
+    res,
     `${SESSION_COOKIE}=${encodeURIComponent(token)}; ${baseCookieAttrs(60 * 60 * 24 * 7)}`,
   );
 }
@@ -98,5 +115,5 @@ export async function getSession(
 }
 
 export function clearSessionCookie(res: VercelResponse) {
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; ${baseCookieAttrs(0)}`);
+  appendCookie(res, `${SESSION_COOKIE}=; ${baseCookieAttrs(0)}`);
 }

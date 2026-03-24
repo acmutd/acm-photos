@@ -5,10 +5,7 @@ import {
   readOAuthStateCookie,
   setSessionCookie,
 } from "../../_lib/session.js";
-
-function first(queryVal: string | string[] | undefined) {
-  return Array.isArray(queryVal) ? queryVal[0] : queryVal;
-}
+import { first } from "../../_lib/query.js";
 
 function redirect(res: VercelResponse, path: string) {
   res.statusCode = 302;
@@ -22,8 +19,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const redirectUri = process.env.GOOGLE_REDIRECT_URI!;
   const allowedDomain = process.env.ALLOWED_DOMAIN ?? "acmutd.co";
 
-  const code = first(req.query.code as any);
-  const state = first(req.query.state as any);
+  const code = first(req.query.code as string | string[]);
+  const state = first(req.query.state as string | string[]);
 
   const expectedState = readOAuthStateCookie(req);
   clearOAuthStateCookie(res);
@@ -51,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const payload = ticket.getPayload();
     const email = payload?.email ?? "";
-    const hd = (payload as any)?.hd as string | undefined;
+    const hd = payload?.hd;
 
     if (!email) return redirect(res, "/?auth=error&reason=no_email");
     if (hd !== allowedDomain)
@@ -65,7 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     return redirect(res, "/?auth=ok");
-  } catch (e) {
+  } catch {
     return redirect(res, "/?auth=error&reason=exception");
   }
 }

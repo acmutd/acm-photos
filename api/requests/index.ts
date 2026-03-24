@@ -1,8 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-expect-error
-import admin from "firebase-admin";
+import { getDb } from "../_lib/firestore.js";
 import { getSession } from "../_lib/session.js";
 
 type Division =
@@ -17,8 +14,6 @@ type Division =
   | "Exec"
   | "Finance";
 
-type RequestStatus = "open" | "in_progress" | "done";
-
 const VALID_DIVISIONS = new Set([
   "Development",
   "Projects",
@@ -31,27 +26,6 @@ const VALID_DIVISIONS = new Set([
   "Exec",
   "Finance",
 ]);
-
-let dbInstance: admin.firestore.Firestore | null = null;
-
-function getDb() {
-  if (dbInstance) return dbInstance;
-  if (admin.apps.length > 0) {
-    dbInstance = admin.firestore();
-    return dbInstance;
-  }
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!raw) throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON");
-
-  const sa = JSON.parse(raw);
-  if (typeof sa.private_key === "string") {
-    sa.private_key = sa.private_key.replace(/\\n/g, "\n");
-  }
-
-  admin.initializeApp({ credential: admin.credential.cert(sa) });
-  dbInstance = admin.firestore();
-  return dbInstance;
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -98,7 +72,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === "POST") {
       const body = req.body || {};
 
-      // Validation
       if (!body.title || !body.description || !body.division) {
         return res
           .status(400)
@@ -142,10 +115,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     return res.status(405).json({ error: "Method not allowed" });
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error(e);
-    const msg =
-      typeof e?.message === "string" ? e.message : "Internal Server Error";
+    const msg = e instanceof Error ? e.message : "Internal Server Error";
     return res.status(500).json({ error: msg });
   }
 }

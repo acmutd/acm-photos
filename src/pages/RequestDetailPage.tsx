@@ -1,13 +1,16 @@
 import * as React from "react";
 import { Link, useParams } from "react-router-dom";
 import { useRequest, useUpdateRequest } from "@/features/requests/hooks";
+import { useMe } from "@/hooks/useMe";
 
+// TODO: implement proper role-based check (e.g. Firestore roles collection)
 function isMediaTeam(email?: string) {
   return !!email && email.toLowerCase().includes("media");
 }
 
 export function RequestDetailPage() {
   const { id = "" } = useParams();
+  const me = useMe();
   const q = useRequest(id);
   const upd = useUpdateRequest(id);
 
@@ -20,7 +23,8 @@ export function RequestDetailPage() {
     if (!item) return;
     setDeliverableFolderId(item.deliverableFolderId ?? "");
     setNotes(item.notes ?? "");
-  }, [item?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.id, item?.deliverableFolderId, item?.notes]);
 
   async function markDone() {
     await upd.mutateAsync({
@@ -46,7 +50,8 @@ export function RequestDetailPage() {
     );
   }
 
-  const mediaControls = isMediaTeam(item.createdByEmail) || true; // todo - figure out if a user is in media
+  // Check current user's email, not the ticket creator's
+  const mediaControls = isMediaTeam(me.data?.email);
 
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-10">

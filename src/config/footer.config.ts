@@ -17,16 +17,14 @@ export const footerData: {
     {
       title: "ACM Photos",
       links: [
-        { label: "Browse", href: "/" },
-        { label: "Search", href: "/search" },
+        { label: "Browse", href: "/media" },
         { label: "Upload", href: "/upload" },
-        { label: "Tag queue", href: "/review" },
+        { label: "Requests", href: "/requests" },
       ],
     },
     {
       title: "Guidelines",
       links: [
-        { label: "Tagging rules", href: "/tagging" },
         { label: "Privacy", href: "/privacy" },
       ],
     },

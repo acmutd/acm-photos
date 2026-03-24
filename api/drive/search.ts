@@ -1,41 +1,23 @@
-/* eslint-disable */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-// @ts-ignore
-import admin from "firebase-admin";
+import { getDb } from "../_lib/firestore.js";
 import { requireDrive } from "../_lib/driveClient.js";
+import { first, mediaTypeFromMime } from "../_lib/query.js";
 
-const FOLDER_CACHE = new Map<string, { ts: number; items: any[] }>();
+const FOLDER_CACHE = new Map<string, { ts: number; items: FolderCacheItem[] }>();
 const CACHE_TTL = 1000 * 60 * 5;
 
-let dbInstance: admin.firestore.Firestore | null = null;
-
-function getDb() {
-  if (dbInstance) return dbInstance;
-  if (admin.apps.length > 0) {
-    dbInstance = admin.firestore();
-    return dbInstance;
-  }
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!raw) throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON");
-  const sa = JSON.parse(raw);
-  if (typeof sa.private_key === "string") {
-    sa.private_key = sa.private_key.replace(/\\n/g, "\n");
-  }
-  admin.initializeApp({ credential: admin.credential.cert(sa) });
-  dbInstance = admin.firestore();
-  return dbInstance;
-}
-
-function first(v: string | string[] | undefined) {
-  return Array.isArray(v) ? v[0] : v;
-}
-
-function mediaTypeFromMime(mime: string): "photo" | "video" | "gif" | "other" {
-  if (mime === "image/gif") return "gif";
-  if (mime.startsWith("image/")) return "photo";
-  if (mime.startsWith("video/")) return "video";
-  return "other";
-}
+type FolderCacheItem = {
+  id: string;
+  title: string;
+  mimeType: string;
+  type: "photo" | "video" | "gif" | "other";
+  fileExtension: string | null;
+  tags: string[];
+  thumbUrl: string;
+  viewUrl?: string;
+  createdAt?: string;
+  timestamp: number;
+};
 
 function extractTags(name: string): string[] {
   const base = name.toLowerCase();
@@ -52,21 +34,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     await requireDrive(req);
     const db = getDb();
-    const rootId = process.env.MEDIA_ROOT_FOLDER_ID;
+    const rootId = process.env.MEDIA_ROOT_FOLDER_ID || process.env.SHARED_DRIVE_ID;
     if (!rootId)
-      return res.status(500).json({ error: "Missing MEDIA_ROOT_FOLDER_ID" });
+      return res.status(500).json({ error: "Missing MEDIA_ROOT_FOLDER_ID or SHARED_DRIVE_ID" });
 
-    const folderId = (first(req.query.folderId as any) ?? rootId) as string;
-    const sub = first(req.query.sub as any) !== "0";
-    const text = (first(req.query.text as any) ?? "").trim().toLowerCase();
-    const type = (first(req.query.type as any) ?? "all") as
+    const folderId = (first(req.query.folderId as string | string[]) ?? rootId) as string;
+    const sub = first(req.query.sub as string | string[]) !== "0";
+    const text = (first(req.query.text as string | string[]) ?? "").trim().toLowerCase();
+    const type = (first(req.query.type as string | string[]) ?? "all") as
       | "all"
       | "photo"
       | "video"
       | "gif"
       | "other";
-    const sort = (first(req.query.sort as any) ?? "new") as "new" | "old";
-    const tagsRaw = (first(req.query.tags as any) ?? "").trim();
+    const sort = (first(req.query.sort as string | string[]) ?? "new") as "new" | "old";
+    const tagsRaw = (first(req.query.tags as string | string[]) ?? "").trim();
     const tags = tagsRaw
       ? tagsRaw
           .split(",")
@@ -75,16 +57,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : [];
 
     const pageSize = Math.min(
-      Math.max(parseInt(first(req.query.pageSize as any) ?? "60", 10) || 60, 1),
+      Math.max(parseInt(first(req.query.pageSize as string | string[]) ?? "60", 10) || 60, 1),
       200,
     );
-    const pageToken = parseInt(first(req.query.cursor as any) ?? "0", 10) || 0; // "0" means start
+    const pageToken = parseInt(first(req.query.cursor as string | string[]) ?? "0", 10) || 0;
 
     const cacheKey = `${folderId}::${sub ? "sub" : "flat"}`;
     const now = Date.now();
     const cached = FOLDER_CACHE.get(cacheKey);
 
-    let allItems: any[] = [];
+    let allItems: FolderCacheItem[] = [];
 
     if (cached && now - cached.ts < CACHE_TTL) {
       allItems = cached.items;
@@ -102,7 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const snapshot = await q.get();
 
       allItems = snapshot.docs.map((doc) => {
-        const d: any = doc.data();
+        const d = doc.data();
         return {
           id: d.id ?? doc.id,
           title: d.name ?? "(untitled)",
@@ -111,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           fileExtension: d.fileExtension ?? null,
           tags: extractTags(d.name ?? ""),
           thumbUrl:
-            d.thumbUrl ?? `/api/drive/thumb?id=${encodeURIComponent(d.id)}`,
+            d.thumbUrl ?? `/api/drive/thumb?id=${encodeURIComponent(d.id)}&s=400`,
           viewUrl: d.webViewLink ?? undefined,
           createdAt: d.createdTime ?? undefined,
           timestamp: d.createdTime ? new Date(d.createdTime).getTime() : 0,
@@ -121,7 +103,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       FOLDER_CACHE.set(cacheKey, { ts: now, items: allItems });
     }
 
-    let processed = allItems;
+    // Shallow copy so sorting doesn't mutate the cached array
+    let processed = [...allItems];
+
     if (text || tags.length > 0 || type !== "all") {
       processed = processed.filter((item) => {
         if (type !== "all" && item.type !== type) return false;
@@ -158,9 +142,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       nextCursor,
       total: totalItems,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error(e);
-    const msg = typeof e?.message === "string" ? e.message : "Failed";
+    const msg = e instanceof Error ? e.message : "Failed";
     return res.status(500).json({ error: msg });
   }
 }

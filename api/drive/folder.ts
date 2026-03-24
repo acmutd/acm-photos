@@ -1,10 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { google } from "googleapis";
 import { getSession } from "../_lib/session.js";
-
-function first(queryVal: string | string[] | undefined) {
-  return Array.isArray(queryVal) ? queryVal[0] : queryVal;
-}
+import { first } from "../_lib/query.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const session = await getSession(req);
@@ -15,12 +12,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: "Missing SHARED_DRIVE_ID" });
 
   const parentId =
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    first(req.query.parentId as any) ?? process.env.MEDIA_ROOT_FOLDER_ID;
+    first(req.query.parentId as string | string[] | undefined) ??
+    process.env.MEDIA_ROOT_FOLDER_ID ??
+    process.env.SHARED_DRIVE_ID;
 
   if (!parentId) {
     return res.status(400).json({
-      error: "Missing parentId (and MEDIA_ROOT_FOLDER_ID not set)",
+      error: "Missing parentId (and no MEDIA_ROOT_FOLDER_ID or SHARED_DRIVE_ID)",
     });
   }
 

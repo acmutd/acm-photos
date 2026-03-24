@@ -1,39 +1,9 @@
-/* eslint-disable */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-// @ts-ignore
-import admin from "firebase-admin";
+import { getDb, admin } from "../_lib/firestore.js";
 import { requireDrive } from "../_lib/driveClient.js";
+import { first, mediaTypeFromMime } from "../_lib/query.js";
 
 const ADMIN_EMAIL = "ryan.polasky@acmutd.co";
-
-let dbInstance: admin.firestore.Firestore | null = null;
-
-function getDb() {
-  if (dbInstance) return dbInstance;
-  if (admin.apps.length > 0) {
-    dbInstance = admin.firestore();
-    return dbInstance;
-  }
-
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!raw) throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON");
-
-  const sa = JSON.parse(raw);
-  if (typeof sa.private_key === "string") {
-    sa.private_key = sa.private_key.replace(/\\n/g, "\n");
-  }
-
-  admin.initializeApp({
-    credential: admin.credential.cert(sa),
-  });
-
-  dbInstance = admin.firestore();
-  return dbInstance;
-}
-
-function first(v: string | string[] | undefined) {
-  return Array.isArray(v) ? v[0] : v;
-}
 
 function escapeQ(s: string) {
   return s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
@@ -47,6 +17,8 @@ type CursorState = {
   folders: number;
   files: number;
   writes: number;
+  /** Map of folderId → parentId, built as we discover folders. */
+  parentMap: Record<string, string | null>;
 };
 
 function decodeCursor(cursor: string | undefined): CursorState | null {
@@ -63,6 +35,29 @@ function encodeCursor(state: CursorState): string {
   return Buffer.from(JSON.stringify(state), "utf8").toString("base64url");
 }
 
+/**
+ * Walk up the parent chain to build the ancestors array for a file/folder.
+ * Includes every folder from the direct parent up to and including rootId.
+ */
+function buildAncestors(
+  folderId: string | null,
+  parentMap: Record<string, string | null>,
+  rootId: string,
+): string[] {
+  const ancestors: string[] = [];
+  let cur = folderId;
+  const seen = new Set<string>();
+
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    ancestors.push(cur);
+    if (cur === rootId) break;
+    cur = parentMap[cur] ?? null;
+  }
+
+  return ancestors;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { drive, driveId } = await requireDrive(req);
@@ -72,14 +67,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (email !== ADMIN_EMAIL)
       return res.status(403).json({ error: "Forbidden" });
 
-    const rootId = process.env.MEDIA_ROOT_FOLDER_ID;
+    const rootId = process.env.MEDIA_ROOT_FOLDER_ID || process.env.SHARED_DRIVE_ID;
     if (!rootId)
-      return res.status(500).json({ error: "Missing MEDIA_ROOT_FOLDER_ID" });
+      return res.status(500).json({ error: "Missing MEDIA_ROOT_FOLDER_ID or SHARED_DRIVE_ID" });
 
-    const dry = first(req.query.dry as any) === "1";
+    const dry = first(req.query.dry as string | string[]) === "1";
     const maxWrites = Math.min(
       Math.max(
-        parseInt(first(req.query.maxWrites as any) ?? "800", 10) || 800,
+        parseInt(first(req.query.maxWrites as string | string[]) ?? "800", 10) || 800,
         1,
       ),
       4000,
@@ -90,7 +85,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const filesCol = db.collection("drive_files");
     const metaDoc = db.collection("drive_index").doc("meta");
 
-    const cursorRaw = first(req.query.cursor as any);
+    const cursorRaw = first(req.query.cursor as string | string[]);
     const cursor = decodeCursor(cursorRaw);
 
     const state: CursorState = cursor ?? {
@@ -101,14 +96,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       folders: 0,
       files: 0,
       writes: 0,
+      parentMap: {},
     };
+
+    // On first invocation (no cursor), seed the parentMap from existing
+    // Firestore folder data so we can compute ancestors for files even if
+    // their parent folders were indexed in a previous cursor page.
+    if (!cursor) {
+      const existingFolders = await foldersCol
+        .where("rootId", "==", rootId)
+        .select("parentId")
+        .get();
+      for (const doc of existingFolders.docs) {
+        state.parentMap[doc.id] = doc.data().parentId ?? null;
+      }
+      // The root folder itself
+      state.parentMap[rootId] = null;
+    }
 
     const now = admin.firestore.FieldValue.serverTimestamp();
 
-    // 3. Batching Logic
     const ops: Array<(batch: FirebaseFirestore.WriteBatch) => void> = [];
 
-    // @ts-ignore
     async function flush() {
       if (dry || ops.length === 0) return;
       const batch = db.batch();
@@ -127,10 +136,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const q = `'${escapeQ(state.current)}' in parents and trashed = false`;
 
+      console.log(`[index] Listing children of: ${state.current} (query: ${q})`);
+      console.log(`[index] driveId: ${driveId}, rootId: ${rootId}`);
+
       const r = await drive.files.list({
         q,
         fields:
-          "nextPageToken, files(id,name,mimeType,parents,createdTime,modifiedTime,webViewLink)",
+          "nextPageToken, files(id,name,mimeType,parents,createdTime,modifiedTime,webViewLink,webContentLink)",
         pageSize: 1000,
         pageToken: state.pageToken ?? undefined,
         corpora: "drive",
@@ -140,6 +152,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
 
       const items = r.data.files ?? [];
+      console.log(`[index] Got ${items.length} items from folder ${state.current}`);
+      if (items.length > 0) {
+        console.log(`[index] First few items:`, items.slice(0, 3).map(f => `${f.name} (${f.mimeType})`));
+      }
+      if (items.length === 0) {
+        console.log(`[index] No items found. Check that SHARED_DRIVE_ID (${driveId}) is correct and the folder ${state.current} has children.`);
+      }
 
       for (const f of items) {
         if (!f?.id) continue;
@@ -147,14 +166,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const mimeType = f.mimeType ?? "";
         const parentId = f.parents?.[0] ?? null;
 
-        if (mimeType === "application/vnd.google-apps.folder") {
+        // Always index folders (for tree navigation), but skip non-media files
+        const isFolder = mimeType === "application/vnd.google-apps.folder";
+        const isMedia =
+          mimeType.startsWith("image/") ||
+          mimeType.startsWith("video/") ||
+          mimeType === "image/svg+xml";
+
+        if (!isFolder && !isMedia) continue;
+
+        if (isFolder) {
           state.queue.push(f.id);
           state.folders++;
           state.writes++;
 
+          // Track this folder in the parentMap for ancestor computation
+          state.parentMap[f.id] = parentId;
+
           ops.push((batch) =>
             batch.set(
-              foldersCol.doc(f.id),
+              foldersCol.doc(f.id!),
               {
                 id: f.id,
                 name: f.name ?? "(untitled)",
@@ -168,21 +199,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ),
           );
         } else {
-          const type =
-            mimeType === "image/gif"
-              ? "gif"
-              : mimeType.startsWith("image/")
-                ? "photo"
-                : mimeType.startsWith("video/")
-                  ? "video"
-                  : "other";
+          const type = mediaTypeFromMime(mimeType);
+          const ancestors = buildAncestors(parentId, state.parentMap, rootId);
 
           state.files++;
           state.writes++;
 
           ops.push((batch) =>
             batch.set(
-              filesCol.doc(f.id),
+              filesCol.doc(f.id!),
               {
                 id: f.id,
                 name: f.name ?? "(untitled)",
@@ -190,12 +215,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 type,
                 parentId,
                 folderId: parentId,
+                ancestors,
                 rootId,
                 driveId,
                 createdTime: f.createdTime ?? null,
                 modifiedTime: f.modifiedTime ?? null,
                 webViewLink: f.webViewLink ?? null,
-                thumbUrl: `/api/drive/thumb?id=${encodeURIComponent(f.id)}`,
+                webContentLink: (f as Record<string, unknown>).webContentLink ?? null,
+                thumbUrl: `/api/drive/thumb?id=${encodeURIComponent(f.id!)}&s=400`,
                 syncId: state.syncId,
                 updatedAt: now,
               },
@@ -247,16 +274,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({
       ok: true,
       dry,
+      config: {
+        rootId,
+        driveId,
+        rootIsSharedDrive: rootId === driveId,
+      },
       scanned: {
         folders: state.folders,
         files: state.files,
         writes: state.writes,
+        queueRemaining: state.queue.length,
       },
       nextCursor: hasMore ? encodeCursor(state) : null,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error(e);
-    const msg = typeof e?.message === "string" ? e.message : "Failed";
+    const msg = e instanceof Error ? e.message : "Failed";
     return res.status(500).json({ error: msg });
   }
 }
@@ -273,19 +306,24 @@ async function deleteOrphanedDocs(
 
   if (snapshot.empty) return;
 
-  const batch = col.firestore.batch();
-  let deleteCount = 0;
+  const orphanRefs = snapshot.docs
+    .filter((doc) => {
+      const data = doc.data();
+      return !data.syncId || data.syncId < currentSyncId;
+    })
+    .map((doc) => doc.ref);
 
-  snapshot.docs.forEach((doc) => {
-    const data = doc.data();
-    if (!data.syncId || data.syncId < currentSyncId) {
-      batch.delete(doc.ref);
-      deleteCount++;
+  if (orphanRefs.length === 0) return;
+
+  console.log(`Deleting ${orphanRefs.length} orphaned items from ${col.id}`);
+
+  // Chunk into batches of 450 to stay under Firestore's 500-write limit
+  for (let i = 0; i < orphanRefs.length; i += 450) {
+    const chunk = orphanRefs.slice(i, i + 450);
+    const batch = col.firestore.batch();
+    for (const ref of chunk) {
+      batch.delete(ref);
     }
-  });
-
-  if (deleteCount > 0) {
-    console.log(`Deleting ${deleteCount} orphaned items from ${col.id}`);
     await batch.commit();
   }
 }

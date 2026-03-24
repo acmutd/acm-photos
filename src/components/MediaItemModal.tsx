@@ -1,4 +1,5 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import type { MediaItem } from "@/features/drive/types";
 
 type Props = {
@@ -68,6 +69,7 @@ export function MediaItemModal({ open, item, onClose, onAddTag }: Props) {
       img.onerror = null;
       img.src = "";
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, item?.id, isVideo, isHeif]);
 
   React.useEffect(() => {
@@ -108,7 +110,7 @@ export function MediaItemModal({ open, item, onClose, onAddTag }: Props) {
             loading="eager"
           />
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 px-6 text-center text-sm text-muted-foreground">
-            <p>HEIF/HEIC preview isn’t supported in this browser.</p>
+            <p>HEIF/HEIC preview isn't supported in this browser.</p>
             <a href={downloadHref} className="underline hover:text-foreground">
               Download to view
             </a>
@@ -129,16 +131,42 @@ export function MediaItemModal({ open, item, onClose, onAddTag }: Props) {
     }
 
     if (isVideo) {
+      const driveViewerUrl = item.viewUrl ?? fullResSrc;
       return (
-        <video
-          className="absolute inset-0 h-full w-full object-contain"
-          controls
-          autoPlay
-          playsInline
-          src={fullResSrc}
-          onLoadedData={() => setHiLoaded(true)}
-          onError={() => setHiFailed(true)}
-        />
+        <>
+          <img
+            key={`${item.id}-video-placeholder`}
+            src={placeholderSrc}
+            alt={item.title}
+            className="absolute inset-0 h-full w-full object-contain opacity-40"
+            loading="eager"
+          />
+          <div className="absolute inset-0 z-30 flex items-center justify-center px-6">
+            <div className="rounded-xl border border-border bg-card/90 p-6 text-center backdrop-blur-sm">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-media-gradient">
+                <svg className="ml-1 h-7 w-7 text-primary-foreground" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </div>
+              <a
+                href={driveViewerUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block rounded-md bg-media-gradient px-5 py-2.5 text-sm font-medium text-primary-foreground"
+              >
+                Watch in Drive
+              </a>
+              <div className="mt-3">
+                <a
+                  href={downloadHref}
+                  className="text-xs text-muted-foreground underline hover:text-foreground transition"
+                >
+                  or download directly
+                </a>
+              </div>
+            </div>
+          </div>
+        </>
       );
     }
 
@@ -176,8 +204,8 @@ export function MediaItemModal({ open, item, onClose, onAddTag }: Props) {
     );
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <button
         type="button"
         aria-label="Close modal"
@@ -190,11 +218,11 @@ export function MediaItemModal({ open, item, onClose, onAddTag }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative z-10 w-full max-w-5xl overflow-hidden rounded-2xl border border-border bg-card shadow-xl"
+        className="relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl"
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0">
             <div
               id={titleId}
@@ -224,79 +252,82 @@ export function MediaItemModal({ open, item, onClose, onAddTag }: Props) {
           </div>
         </div>
 
-        <div className="grid gap-4 p-4 md:grid-cols-[1fr_280px]">
-          <div className="rounded-xl bg-secondary/40 p-2">
-            <div className="w-full overflow-hidden rounded-lg bg-secondary/40">
-              <div className="relative aspect-square w-full">
-                {!hiLoaded && !hiFailed && !isVideo && !isHeif && (
-                  <div className="absolute inset-0 z-20 flex items-center justify-center">
-                    <div className="h-7 w-7 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-                  </div>
-                )}
+        <div className="min-h-0 overflow-y-auto">
+          <div className="grid gap-4 p-4 md:grid-cols-[1fr_280px]">
+            <div className="rounded-xl bg-secondary/40 p-2">
+              <div className="w-full overflow-hidden rounded-lg bg-secondary/40">
+                <div className="relative aspect-[4/3] w-full">
+                  {!hiLoaded && !hiFailed && !isVideo && !isHeif && (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center">
+                      <div className="h-7 w-7 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+                    </div>
+                  )}
 
-                {renderContent()}
-              </div>
-            </div>
-          </div>
-
-          <aside className="flex flex-col gap-4">
-            <div className="rounded-xl border border-border bg-background p-3">
-              <div className="text-xs font-semibold text-foreground">Tags</div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {item.tags?.length ? (
-                  item.tags.map((t: string) => (
-                    <span
-                      key={t}
-                      className="rounded-full border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground"
-                    >
-                      {t}
-                    </span>
-                  ))
-                ) : (
-                  <div className="text-xs text-muted-foreground">
-                    No tags yet.
-                  </div>
-                )}
+                  {renderContent()}
+                </div>
               </div>
             </div>
 
-            <div className="rounded-xl border border-border bg-background p-3">
-              <div className="text-xs font-semibold text-foreground">
-                Add tag
+            <aside className="flex flex-col gap-4">
+              <div className="rounded-xl border border-border bg-background p-3">
+                <div className="text-xs font-semibold text-foreground">Tags</div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {item.tags?.length ? (
+                    item.tags.map((t: string) => (
+                      <span
+                        key={t}
+                        className="rounded-full border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground"
+                      >
+                        {t}
+                      </span>
+                    ))
+                  ) : (
+                    <div className="text-xs text-muted-foreground">
+                      No tags yet.
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="mt-2 flex gap-2">
-                <input
-                  value={tag}
-                  onChange={(e) => setTag(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") submitTag();
-                  }}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  placeholder="e.g. sp26, marketing"
-                />
-                <button
-                  type="button"
-                  onClick={submitTag}
-                  className="h-10 rounded-md bg-media-gradient px-3 text-sm font-semibold text-primary-foreground"
+
+              <div className="rounded-xl border border-border bg-background p-3">
+                <div className="text-xs font-semibold text-foreground">
+                  Add tag
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={tag}
+                    onChange={(e) => setTag(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") submitTag();
+                    }}
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    placeholder="e.g. sp26, marketing"
+                  />
+                  <button
+                    type="button"
+                    onClick={submitTag}
+                    className="h-10 rounded-md bg-media-gradient px-3 text-sm font-semibold text-primary-foreground"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {item.viewUrl && (
+                <a
+                  href={item.viewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-xl border border-border bg-background p-3 text-xs text-muted-foreground hover:text-foreground transition"
                 >
-                  Add
-                </button>
-              </div>
-            </div>
-
-            {item.viewUrl && (
-              <a
-                href={item.viewUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-xl border border-border bg-background p-3 text-xs text-muted-foreground hover:text-foreground transition"
-              >
-                Open in Drive
-              </a>
-            )}
-          </aside>
+                  Open in Drive
+                </a>
+              )}
+            </aside>
+          </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
